@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeRF2Real | Generative Bionics Perception Lab</title>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&family=Source+Code+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --gold: #f0b429;
+            --gold-glow: rgba(240,180,41,0.3);
+            --rose: #fb7185;
+            --lime: #a3e635;
+            --blue: #60a5fa;
+            --teal: #2dd4bf;
+            --purple: #c084fc;
+            --bg: #0a0a0a;
+            --bg-card: #141414;
+            --bg-elevated: #1f1f1f;
+            --text: #fafaf9;
+            --text-dim: #a8a29e;
+            --text-muted: #57534e;
+            --border: #292524;
+            --gradient: linear-gradient(135deg, #f0b429, #fb7185, #c084fc);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Chakra Petch', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+            background-image: radial-gradient(ellipse at 50% 0%, rgba(240,180,41,0.04) 0%, transparent 60%);
+        }
+        .header {
+            background: rgba(20,20,20,0.9);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            padding: 0.55rem 1.5rem;
+            position: sticky; top: 0; z-index: 100;
+        }
+        .header-inner { max-width: 1850px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; }
+        .logo { display: flex; align-items: center; gap: 0.8rem; }
+        .logo-icon {
+            width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            font-size: 1.3rem; background: var(--gradient); position: relative;
+        }
+        .logo-icon::after { content:''; position:absolute; inset:-4px; border-radius:50%; background:var(--gradient); opacity:0.3; filter:blur(8px); z-index:-1; }
+        .logo-title { font-size: 1.3rem; font-weight: 700; background: var(--gradient); -webkit-background-clip:text; -webkit-text-fill-color:transparent; letter-spacing: 1px; }
+        .logo-sub { font-size: 0.5rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 3px; }
+        .badges { display: flex; gap: 0.35rem; }
+        .badge { background: var(--bg-card); border: 1px solid var(--border); padding: 0.25rem 0.55rem; border-radius: 6px; font-size: 0.58rem; color: var(--text-dim); font-family: 'Source Code Pro', monospace; }
+        .badge.live { background: rgba(240,180,41,0.12); border-color: var(--gold); color: var(--gold); }
+        .badge.live::before { content:''; display:inline-block; width:5px; height:5px; background:var(--gold); border-radius:50%; margin-right:4px; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+        .main { max-width: 1850px; margin: 0 auto; padding: 1rem 1.5rem; }
+        .hero { text-align: center; margin-bottom: 1rem; }
+        .hero h1 { font-size: 1.7rem; font-weight: 700; background: var(--gradient); -webkit-background-clip:text; -webkit-text-fill-color:transparent; letter-spacing: 2px; }
+        .hero p { color: var(--text-dim); font-size: 0.8rem; }
+
+        .grid-main { display: grid; grid-template-columns: 1fr 370px; gap: 1rem; }
+        @media(max-width:1200px){ .grid-main{grid-template-columns:1fr;} }
+
+        .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+        .card-head { padding: 0.7rem 1rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+        .card-head h3 { font-size: 0.78rem; font-weight: 700; display: flex; align-items: center; gap: 0.4rem; letter-spacing: 0.5px; }
+        .card-body { padding: 1rem; }
+
+        /* Viewport - Gaussian Splatting */
+        .viewport {
+            position: relative; background: #050505; border-radius: 10px; height: 440px; overflow: hidden;
+            border: 1px solid rgba(240,180,41,0.12);
+        }
+        .vp-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+        .vp-hud {
+            position: absolute; top: 8px; left: 8px; background: rgba(10,10,10,0.85); border: 1px solid var(--border);
+            border-radius: 8px; padding: 0.45rem 0.6rem; font-family: 'Source Code Pro', monospace; font-size: 0.55rem;
+        }
+        .vp-hud div { margin-bottom: 1px; }
+        .hud-l { color: var(--text-muted); }
+        .hud-v { color: var(--gold); }
+        .vp-mode {
+            position: absolute; top: 8px; right: 8px; display: flex; gap: 3px;
+        }
+        .vp-mode-btn {
+            background: rgba(10,10,10,0.85); border: 1px solid var(--border); border-radius: 6px;
+            padding: 0.25rem 0.5rem; font-family: 'Source Code Pro', monospace; font-size: 0.55rem;
+            color: var(--text-dim); cursor: pointer; transition: all 0.2s;
+        }
+        .vp-mode-btn:hover, .vp-mode-btn.active { border-color: var(--gold); color: var(--gold); }
+        .vp-progress {
+            position: absolute; bottom: 0; left: 0; right: 0; height: 3px; background: var(--bg-elevated);
+        }
+        .vp-progress-fill { height: 100%; background: var(--gradient); width: 0%; transition: width 0.5s; }
+
+        /* Camera orbit indicator */
+        .orbit-ring {
+            position: absolute; bottom: 12px; right: 12px; width: 65px; height: 65px;
+            border: 1.5px solid rgba(240,180,41,0.2); border-radius: 50%; background: rgba(10,10,10,0.6);
+        }
+        .orbit-cam {
+            position: absolute; width: 8px; height: 8px; background: var(--gold); border-radius: 50%;
+            box-shadow: 0 0 8px var(--gold); transition: all 0.3s;
+            top: 50%; left: 50%; transform: translate(-50%, -50%);
+        }
+        .orbit-center { position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; background: var(--rose); border-radius: 50%; transform: translate(-50%, -50%); }
+
+        /* Controls */
+        .controls { display: flex; gap: 0.4rem; margin-top: 0.7rem; }
+        .ctrl-btn {
+            flex: 1; padding: 0.55rem; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px;
+            color: var(--text); font-family: 'Chakra Petch', sans-serif; font-size: 0.7rem; font-weight: 600;
+            cursor: pointer; transition: all 0.3s; text-align: center; letter-spacing: 0.5px;
+        }
+        .ctrl-btn:hover { border-color: var(--gold); background: rgba(240,180,41,0.08); }
+        .ctrl-btn.active { border-color: var(--gold); background: rgba(240,180,41,0.15); color: var(--gold); }
+
+        /* Training Metrics */
+        .train-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.45rem; margin-top: 0.7rem; }
+        .train-metric { background: var(--bg-elevated); border-radius: 8px; padding: 0.55rem; text-align: center; }
+        .tm-val { font-size: 1.1rem; font-weight: 700; font-family: 'Source Code Pro', monospace; }
+        .tm-label { font-size: 0.5rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+
+        /* Sidebar */
+        .sidebar { display: flex; flex-direction: column; gap: 0.8rem; }
+
+        /* Loss Chart */
+        .loss-chart { background: #050505; border-radius: 8px; height: 130px; border: 1px solid rgba(240,180,41,0.1); position: relative; overflow: hidden; }
+        .loss-canvas { width: 100%; height: 100%; }
+
+        /* Novel Views */
+        .novel-views { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem; }
+        .nv-thumb {
+            aspect-ratio: 4/3; border-radius: 8px; border: 2px solid var(--border); overflow: hidden;
+            position: relative; cursor: pointer; transition: all 0.3s;
+        }
+        .nv-thumb:hover { border-color: var(--gold); transform: scale(1.03); }
+        .nv-thumb.active { border-color: var(--gold); box-shadow: 0 0 12px rgba(240,180,41,0.3); }
+        .nv-thumb canvas { width: 100%; height: 100%; }
+        .nv-label {
+            position: absolute; bottom: 2px; left: 2px; right: 2px; text-align: center;
+            font-size: 0.45rem; font-family: 'Source Code Pro'; color: var(--gold);
+            background: rgba(0,0,0,0.7); padding: 1px 0; border-radius: 0 0 6px 6px;
+        }
+
+        /* Pipeline Steps */
+        .pipeline { }
+        .pipe-step {
+            display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem;
+            background: var(--bg-elevated); border-radius: 8px; margin-bottom: 0.3rem;
+            border-left: 3px solid var(--border); transition: all 0.3s;
+        }
+        .pipe-step.complete { border-left-color: var(--lime); }
+        .pipe-step.active { border-left-color: var(--gold); background: rgba(240,180,41,0.06); }
+        .pipe-step.pending { opacity: 0.5; }
+        .pipe-icon { font-size: 0.85rem; width: 28px; text-align: center; }
+        .pipe-info { flex: 1; }
+        .pipe-name { font-size: 0.7rem; font-weight: 600; }
+        .pipe-detail { font-size: 0.55rem; color: var(--text-muted); font-family: 'Source Code Pro', monospace; }
+        .pipe-status { font-size: 0.6rem; font-family: 'Source Code Pro', monospace; font-weight: 600; }
+        .pipe-status.done { color: var(--lime); }
+        .pipe-status.running { color: var(--gold); }
+        .pipe-status.wait { color: var(--text-muted); }
+
+        /* Sim2Real Comparison */
+        .comparison { display: flex; gap: 0.4rem; }
+        .comp-panel { flex: 1; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); position: relative; }
+        .comp-panel canvas { width: 100%; aspect-ratio: 4/3; display: block; }
+        .comp-label {
+            position: absolute; top: 4px; left: 4px; background: rgba(0,0,0,0.75); padding: 0.15rem 0.4rem;
+            border-radius: 4px; font-size: 0.55rem; font-family: 'Source Code Pro'; font-weight: 600;
+        }
+        .comp-label.sim { color: var(--blue); }
+        .comp-label.real { color: var(--lime); }
+
+        /* Loading */
+        .loading-overlay {
+            position: fixed; inset: 0; background: rgba(10,10,10,0.98); display: none;
+            flex-direction: column; align-items: center; justify-content: center; z-index: 1000;
+        }
+        .loading-overlay.active { display: flex; }
+        .load-rings { position: relative; width: 60px; height: 60px; margin-bottom: 1.2rem; }
+        .load-ring {
+            position: absolute; border: 2px solid transparent; border-radius: 50%;
+            animation: ringRotate 1.5s linear infinite;
+        }
+        .load-ring:nth-child(1) { inset: 0; border-top-color: var(--gold); }
+        .load-ring:nth-child(2) { inset: 6px; border-right-color: var(--rose); animation-duration: 2s; animation-direction: reverse; }
+        .load-ring:nth-child(3) { inset: 12px; border-bottom-color: var(--purple); animation-duration: 1s; }
+        @keyframes ringRotate { to { transform: rotate(360deg); } }
+        .load-text { font-size: 0.9rem; font-weight: 700; letter-spacing: 1px; }
+        .load-sub { font-size: 0.7rem; color: var(--text-muted); font-family: 'Source Code Pro', monospace; margin-top: 0.4rem; }
+
+        /* Toast */
+        .toast {
+            position: fixed; bottom: 1.5rem; right: 1.5rem; background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 10px; padding: 0.7rem 1rem; display: flex; align-items: center; gap: 0.5rem;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.6); transform: translateY(100px); opacity: 0;
+            transition: all 0.4s cubic-bezier(0.4,0,0.2,1); z-index: 999;
+        }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast-title { font-size: 0.72rem; font-weight: 700; }
+        .toast-msg { font-size: 0.58rem; color: var(--text-muted); }
+
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    </style>
+</head>
+<body>
+<header class="header">
+    <div class="header-inner">
+        <div class="logo">
+            <div class="logo-icon">✦</div>
+            <div>
+                <div class="logo-title">NeRF2Real</div>
+                <div class="logo-sub">Generative Bionics • Perception Lab</div>
+            </div>
+        </div>
+        <div class="badges">
+            <span class="badge live">Training Live</span>
+            <span class="badge">3D Gaussians</span>
+            <span class="badge">Isaac Sim</span>
+            <span class="badge">CUDA 12.4</span>
+        </div>
+    </div>
+</header>
+
+<main class="main">
+    <div class="hero">
+        <h1>✦ Neural Scene Reconstruction — Sim-to-Real</h1>
+        <p>3D Gaussian Splatting for industrial scene reconstruction &amp; sim-to-real perception transfer on GENE.01</p>
+    </div>
+    <div class="grid-main">
+        <div class="card">
+            <div class="card-head">
+                <h3>✦ Gaussian Splat Viewer</h3>
+                <span style="font-size:0.55rem;color:var(--text-muted);font-family:'Source Code Pro'" id="renderInfo">idle</span>
+            </div>
+            <div class="card-body">
+                <div class="viewport" id="viewport">
+                    <canvas class="vp-canvas" id="mainCanvas"></canvas>
+                    <div class="vp-hud">
+                        <div><span class="hud-l">ITER </span><span class="hud-v" id="hudIter">0</span></div>
+                        <div><span class="hud-l">PSNR </span><span class="hud-v" id="hudPsnr">0.00</span></div>
+                        <div><span class="hud-l">SPLATS </span><span class="hud-v" id="hudSplats">0</span></div>
+                        <div><span class="hud-l">CAM </span><span class="hud-v" id="hudCam">0°</span></div>
+                    </div>
+                    <div class="vp-mode">
+                        <div class="vp-mode-btn active" onclick="setRenderMode(this,'splat')">Splat</div>
+                        <div class="vp-mode-btn" onclick="setRenderMode(this,'depth')">Depth</div>
+                        <div class="vp-mode-btn" onclick="setRenderMode(this,'normal')">Normal</div>
+                    </div>
+                    <div class="orbit-ring">
+                        <div class="orbit-center"></div>
+                        <div class="orbit-cam" id="orbitCam"></div>
+                    </div>
+                    <div class="vp-progress"><div class="vp-progress-fill" id="trainProgress"></div></div>
+                </div>
+
+                <div class="controls">
+                    <button class="ctrl-btn" id="trainBtn" onclick="toggleTraining()"><span id="trainIcon">▶</span> <span id="trainText">Start Training</span></button>
+                    <button class="ctrl-btn" onclick="resetTraining()">↻ Reset</button>
+                    <button class="ctrl-btn" onclick="densifySplats()">⊕ Densify</button>
+                    <button class="ctrl-btn" onclick="pruneSplats()">⊖ Prune</button>
+                    <button class="ctrl-btn" onclick="exportMesh()">⬡ Export</button>
+                </div>
+
+                <div class="train-grid">
+                    <div class="train-metric"><div class="tm-val" style="color:var(--gold)" id="mIter">0</div><div class="tm-label">Iterations</div></div>
+                    <div class="train-metric"><div class="tm-val" style="color:var(--lime)" id="mPsnr">0.00</div><div class="tm-label">PSNR (dB)</div></div>
+                    <div class="train-metric"><div class="tm-val" style="color:var(--blue)" id="mSplats">0</div><div class="tm-label">Gaussians</div></div>
+                    <div class="train-metric"><div class="tm-val" style="color:var(--rose)" id="mLoss">0.000</div><div class="tm-label">Loss</div></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <div class="card">
+                <div class="card-head"><h3>📉 Training Loss</h3></div>
+                <div class="card-body">
+                    <div class="loss-chart"><canvas class="loss-canvas" id="lossCanvas"></canvas></div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-head"><h3>📸 Novel View Synthesis</h3></div>
+                <div class="card-body">
+                    <div class="novel-views" id="novelViews"></div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-head"><h3>⚙️ Pipeline Status</h3></div>
+                <div class="card-body">
+                    <div class="pipeline" id="pipeline"></div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-head"><h3>🔄 Sim-to-Real Transfer</h3></div>
+                <div class="card-body">
+                    <div class="comparison" id="comparison"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="load-rings"><div class="load-ring"></div><div class="load-ring"></div><div class="load-ring"></div></div>
+    <div class="load-text">Initializing NeRF2Real Pipeline</div>
+    <div class="load-sub" id="loadStage">Loading CUDA kernels...</div>
+</div>
+
+<div class="toast" id="toast">
+    <span id="toastIcon" style="font-size:1rem">✦</span>
+    <div>
+        <div class="toast-title" id="toastTitle">Done</div>
+        <div class="toast-msg" id="toastMsg">Ready</div>
+    </div>
+</div>
+
+<script>
+let isTraining = false, trainInterval = null, iteration = 0;
+let numSplats = 0, psnr = 0, loss = 1.0;
+let lossHistory = [], psnrHistory = [];
+let camAngle = 0, renderMode = 'splat';
+const MAX_ITER = 30000;
+
+const PIPELINE_STEPS = [
+    { icon: '📷', name: 'Image Capture', detail: '128 views captured', status: 'complete' },
+    { icon: '🔺', name: 'SfM Initialization', detail: 'COLMAP sparse reconstruction', status: 'complete' },
+    { icon: '✦', name: 'Gaussian Training', detail: '3DGS optimization', status: 'active' },
+    { icon: '🧹', name: 'Densify & Prune', detail: 'Adaptive density control', status: 'pending' },
+    { icon: '📦', name: 'Mesh Export', detail: 'Marching cubes extraction', status: 'pending' },
+    { icon: '🔄', name: 'Isaac Sim Import', detail: 'Scene transfer & validation', status: 'pending' },
+];
+
+function init() {
+    showLoading();
+    setTimeout(() => {
+        document.getElementById('loadingOverlay').classList.remove('active');
+        initCanvases();
+        renderPipeline();
+        renderNovelViews();
+        renderComparison();
+        drawMainScene();
+        toast('✦ Pipeline Ready', 'Gaussian splatting initialized');
+    }, 1500);
+}
+
+function showLoading() {
+    document.getElementById('loadingOverlay').classList.add('active');
+    const stages = ['Loading CUDA kernels...', 'Initializing rasterizer...', 'Loading SfM point cloud...', 'Allocating GPU memory...', 'Ready!'];
+    let i = 0;
+    const iv = setInterval(() => { i++; if (i < stages.length) document.getElementById('loadStage').textContent = stages[i]; else clearInterval(iv); }, 350);
+}
+
+function initCanvases() {
+    const c = document.getElementById('mainCanvas');
+    c.width = c.offsetWidth * 2; c.height = c.offsetHeight * 2;
+    const lc = document.getElementById('lossCanvas');
+    lc.width = lc.offsetWidth * 2; lc.height = lc.offsetHeight * 2;
+}
+
+function drawMainScene() {
+    const c = document.getElementById('mainCanvas');
+    const ctx = c.getContext('2d');
+    const w = c.width, h = c.height;
+    ctx.clearRect(0, 0, w, h);
+
+    const cx = w / 2, cy = h / 2;
+    const quality = Math.min(1, iteration / 8000);
+
+    if (renderMode === 'depth') {
+        // Depth visualization
+        for (let x = 0; x < w; x += 6) {
+            for (let y = 0; y < h; y += 6) {
+                const dx = (x - cx) / w, dy = (y - cy) / h;
+                const d = Math.sqrt(dx * dx + dy * dy);
+                const depth = 0.3 + d * 1.2 + Math.sin(dx * 10 + camAngle) * 0.05;
+                const v = Math.floor((1 - Math.min(1, depth)) * 255 * quality);
+                ctx.fillStyle = `rgb(${v}, ${Math.floor(v * 0.7)}, ${Math.floor(v * 0.3)})`;
+                ctx.fillRect(x, y, 6, 6);
+            }
+        }
+    } else if (renderMode === 'normal') {
+        // Normal map visualization
+        for (let x = 0; x < w; x += 5) {
+            for (let y = 0; y < h; y += 5) {
+                const nx = ((x / w) * 2 - 1 + Math.sin(camAngle)) * 0.5 + 0.5;
+                const ny = ((y / h) * 2 - 1) * 0.5 + 0.5;
+                const nz = 0.8;
+                const r = Math.floor(nx * 255 * quality);
+                const g = Math.floor(ny * 255 * quality);
+                const b = Math.floor(nz * 255 * quality);
+                ctx.fillStyle = `rgb(${r},${g},${b})`;
+                ctx.fillRect(x, y, 5, 5);
+            }
+        }
+    } else {
+        // Gaussian splat visualization
+        const numVisible = Math.floor(numSplats * 0.01) + 50;
+        // Background structure
+        drawShipyardStructure(ctx, w, h, quality);
+        // Gaussian splats
+        for (let i = 0; i < Math.min(numVisible, 2000); i++) {
+            const seed = i * 7919 + Math.floor(camAngle * 100);
+            const px = (seededRandom(seed) * 0.8 + 0.1) * w;
+            const py = (seededRandom(seed + 1) * 0.8 + 0.1) * h;
+            const size = (seededRandom(seed + 2) * 8 + 2) * quality;
+            const alpha = Math.min(0.8, (seededRandom(seed + 3) * 0.6 + 0.2) * quality);
+
+            const hue = seededRandom(seed + 4);
+            let r, g, b;
+            if (hue < 0.3) { r = 180; g = 140; b = 80; } // warm metal
+            else if (hue < 0.5) { r = 80; g = 100; b = 140; } // cool steel
+            else if (hue < 0.7) { r = 100; g = 130; b = 100; } // green machinery
+            else { r = 140; g = 90; b = 70; } // rust
+
+            const grad = ctx.createRadialGradient(px, py, 0, px, py, size);
+            grad.addColorStop(0, `rgba(${r},${g},${b},${alpha})`);
+            grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+            ctx.fillStyle = grad;
+            ctx.fillRect(px - size, py - size, size * 2, size * 2);
+        }
+    }
+
+    // Camera frustum indicator
+    const camX = cx + Math.cos(camAngle) * 30;
+    const camY = cy + Math.sin(camAngle) * 30;
+    ctx.strokeStyle = 'rgba(240,180,41,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(camX, camY);
+    ctx.lineTo(camX + Math.cos(camAngle - 0.3) * 50, camY + Math.sin(camAngle - 0.3) * 50);
+    ctx.moveTo(camX, camY);
+    ctx.lineTo(camX + Math.cos(camAngle + 0.3) * 50, camY + Math.sin(camAngle + 0.3) * 50);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Update orbit indicator
+    const orbitEl = document.getElementById('orbitCam');
+    const orbitR = 25;
+    const ox = 50 + Math.cos(camAngle) * orbitR;
+    const oy = 50 + Math.sin(camAngle) * orbitR;
+    orbitEl.style.left = ox + '%'; orbitEl.style.top = oy + '%';
+}
+
+function drawShipyardStructure(ctx, w, h, q) {
+    if (q < 0.1) return;
+    ctx.globalAlpha = q * 0.3;
+    // Floor
+    ctx.fillStyle = '#1a1612';
+    ctx.fillRect(0, h * 0.6, w, h * 0.4);
+    // Walls
+    ctx.fillStyle = '#12161a';
+    ctx.fillRect(0, 0, w * 0.03, h);
+    ctx.fillRect(w * 0.97, 0, w * 0.03, h);
+    // Structural beams
+    for (let i = 0; i < 5; i++) {
+        ctx.fillStyle = '#1f2937';
+        ctx.fillRect(w * (0.15 + i * 0.18), h * 0.05, w * 0.02, h * 0.55);
+    }
+    // Equipment blocks
+    ctx.fillStyle = '#1a2a1a';
+    ctx.fillRect(w * 0.1, h * 0.4, w * 0.15, h * 0.2);
+    ctx.fillStyle = '#2a1a1a';
+    ctx.fillRect(w * 0.6, h * 0.35, w * 0.12, h * 0.25);
+    ctx.fillStyle = '#1a1a2a';
+    ctx.fillRect(w * 0.35, h * 0.3, w * 0.2, h * 0.15);
+    ctx.globalAlpha = 1;
+}
+
+function seededRandom(seed) {
+    const x = Math.sin(seed * 9301 + 49297) * 49297;
+    return x - Math.floor(x);
+}
+
+function trainStep() {
+    iteration += 50;
+    camAngle += 0.04;
+
+    // Training dynamics
+    const progress = iteration / MAX_ITER;
+    loss = Math.max(0.001, 1.0 * Math.exp(-iteration / 3000) + (Math.random() - 0.5) * 0.01);
+    psnr = Math.min(38, 15 + 23 * (1 - Math.exp(-iteration / 5000)) + (Math.random() - 0.5) * 0.5);
+    numSplats = Math.floor(50000 + iteration * 8 + Math.sin(iteration / 500) * 5000);
+
+    lossHistory.push(loss);
+    psnrHistory.push(psnr);
+    if (lossHistory.length > 200) { lossHistory.shift(); psnrHistory.shift(); }
+
+    // Update UI
+    document.getElementById('hudIter').textContent = iteration.toLocaleString();
+    document.getElementById('hudPsnr').textContent = psnr.toFixed(2);
+    document.getElementById('hudSplats').textContent = (numSplats / 1000).toFixed(0) + 'K';
+    document.getElementById('hudCam').textContent = ((camAngle * 180 / Math.PI) % 360).toFixed(0) + '°';
+    document.getElementById('mIter').textContent = iteration.toLocaleString();
+    document.getElementById('mPsnr').textContent = psnr.toFixed(2);
+    document.getElementById('mSplats').textContent = (numSplats / 1000).toFixed(0) + 'K';
+    document.getElementById('mLoss').textContent = loss.toFixed(4);
+    document.getElementById('trainProgress').style.width = (progress * 100) + '%';
+    document.getElementById('renderInfo').textContent = `${(28 + Math.random() * 4).toFixed(0)} FPS • ${renderMode}`;
+
+    // Pipeline updates
+    if (iteration > 5000 && PIPELINE_STEPS[3].status === 'pending') {
+        PIPELINE_STEPS[3].status = 'active';
+        renderPipeline();
+    }
+    if (iteration > 15000 && PIPELINE_STEPS[3].status === 'active') {
+        PIPELINE_STEPS[3].status = 'complete';
+        PIPELINE_STEPS[4].status = 'active';
+        renderPipeline();
+        toast('🧹 Densify Complete', 'Gaussian count optimized');
+    }
+
+    drawMainScene();
+    drawLossChart();
+
+    if (iteration >= MAX_ITER) {
+        stopTraining();
+        PIPELINE_STEPS.forEach(s => s.status = 'complete');
+        renderPipeline();
+        toast('✦ Training Complete', `Final PSNR: ${psnr.toFixed(2)} dB`);
+    }
+}
+
+function drawLossChart() {
+    const c = document.getElementById('lossCanvas');
+    const ctx = c.getContext('2d');
+    const w = c.width, h = c.height;
+    ctx.clearRect(0, 0, w, h);
+
+    if (lossHistory.length < 2) return;
+    const max = Math.max(...lossHistory);
+    const min = Math.min(...lossHistory);
+    const range = max - min || 0.001;
+
+    // Loss line
+    ctx.beginPath();
+    ctx.strokeStyle = '#fb7185';
+    ctx.lineWidth = 2;
+    lossHistory.forEach((v, i) => {
+        const x = (i / (lossHistory.length - 1)) * w;
+        const y = h - ((v - min) / range) * h * 0.85 - h * 0.05;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // Fill
+    const ly = h - ((lossHistory[lossHistory.length - 1] - min) / range) * h * 0.85 - h * 0.05;
+    ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.closePath();
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, 'rgba(251,113,133,0.2)');
+    grad.addColorStop(1, 'rgba(251,113,133,0)');
+    ctx.fillStyle = grad; ctx.fill();
+
+    // Labels
+    ctx.fillStyle = '#57534e';
+    ctx.font = '10px "Source Code Pro"';
+    ctx.fillText('loss: ' + loss.toFixed(4), 6, 14);
+    ctx.fillStyle = '#a3e635';
+    ctx.fillText('psnr: ' + psnr.toFixed(2), w - 90, 14);
+}
+
+function renderNovelViews() {
+    const container = document.getElementById('novelViews');
+    const angles = [0, 60, 120, 180, 240, 300];
+    container.innerHTML = angles.map((a, i) => {
+        return `<div class="nv-thumb ${i === 0 ? 'active' : ''}" onclick="selectView(this, ${a})">
+            <canvas id="nvCanvas${i}" width="160" height="120"></canvas>
+            <div class="nv-label">${a}°</div>
+        </div>`;
+    }).join('');
+
+    // Draw mini views
+    angles.forEach((a, i) => {
+        const c = document.getElementById(`nvCanvas${i}`);
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#0a0a0a';
+        ctx.fillRect(0, 0, 160, 120);
+        // Mini splats
+        for (let j = 0; j < 40; j++) {
+            const seed = j * 31 + a;
+            const px = seededRandom(seed) * 150 + 5;
+            const py = seededRandom(seed + 1) * 110 + 5;
+            const hue = seededRandom(seed + 2);
+            const color = hue < 0.3 ? '#b4956a' : hue < 0.6 ? '#6a7fb4' : '#6ab47a';
+            ctx.globalAlpha = 0.4;
+            ctx.fillStyle = color;
+            ctx.beginPath(); ctx.arc(px, py, seededRandom(seed + 3) * 6 + 2, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+    });
+}
+
+function selectView(el, angle) {
+    document.querySelectorAll('.nv-thumb').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    camAngle = angle * Math.PI / 180;
+    drawMainScene();
+}
+
+function renderPipeline() {
+    const container = document.getElementById('pipeline');
+    container.innerHTML = PIPELINE_STEPS.map(s => {
+        const statusLabel = s.status === 'complete' ? '✓ Done' : s.status === 'active' ? '⟳ Running' : '○ Waiting';
+        const statusClass = s.status === 'complete' ? 'done' : s.status === 'active' ? 'running' : 'wait';
+        return `<div class="pipe-step ${s.status}">
+            <div class="pipe-icon">${s.icon}</div>
+            <div class="pipe-info">
+                <div class="pipe-name">${s.name}</div>
+                <div class="pipe-detail">${s.detail}</div>
+            </div>
+            <div class="pipe-status ${statusClass}">${statusLabel}</div>
+        </div>`;
+    }).join('');
+}
+
+function renderComparison() {
+    const container = document.getElementById('comparison');
+    container.innerHTML = `
+        <div class="comp-panel">
+            <canvas id="simCanvas" width="300" height="220"></canvas>
+            <div class="comp-label sim">SIM (Isaac)</div>
+        </div>
+        <div class="comp-panel">
+            <canvas id="realCanvas" width="300" height="220"></canvas>
+            <div class="comp-label real">REAL (GS)</div>
+        </div>
+    `;
+
+    // Draw sim view (clean, synthetic)
+    const sc = document.getElementById('simCanvas').getContext('2d');
+    sc.fillStyle = '#1a1a2e'; sc.fillRect(0, 0, 300, 220);
+    sc.fillStyle = '#2a2a3e'; sc.fillRect(10, 80, 80, 60);
+    sc.fillStyle = '#1a2a3e'; sc.fillRect(120, 60, 100, 80);
+    sc.fillStyle = '#2a3a2a'; sc.fillRect(240, 90, 50, 50);
+    sc.strokeStyle = '#3a4a5a'; sc.lineWidth = 1;
+    for (let x = 0; x < 300; x += 30) { sc.beginPath(); sc.moveTo(x, 160); sc.lineTo(x, 220); sc.stroke(); }
+    sc.fillStyle = '#3a3a4e'; sc.fillRect(0, 155, 300, 2);
+
+    // Draw real view (noisy, gaussian)
+    const rc = document.getElementById('realCanvas').getContext('2d');
+    rc.fillStyle = '#12100e'; rc.fillRect(0, 0, 300, 220);
+    for (let i = 0; i < 300; i++) {
+        const seed = i * 47;
+        const px = seededRandom(seed) * 280 + 10;
+        const py = seededRandom(seed + 1) * 200 + 10;
+        const hue = seededRandom(seed + 2);
+        const color = hue < 0.3 ? '#8a7050' : hue < 0.6 ? '#506a8a' : '#508a5a';
+        rc.globalAlpha = 0.5;
+        rc.fillStyle = color;
+        rc.beginPath(); rc.arc(px, py, seededRandom(seed + 3) * 6 + 1, 0, Math.PI * 2); rc.fill();
+    }
+    rc.globalAlpha = 1;
+}
+
+function setRenderMode(btn, mode) {
+    renderMode = mode;
+    document.querySelectorAll('.vp-mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    drawMainScene();
+}
+
+function toggleTraining() {
+    if (!isTraining) {
+        const overlay = document.getElementById('loadingOverlay');
+        overlay.classList.add('active');
+        const stages = ['Loading CUDA kernels...', 'Allocating GPU memory...', 'Initializing SH coefficients...', 'Starting optimization...'];
+        let i = 0;
+        const iv = setInterval(() => { i++; if (i < stages.length) document.getElementById('loadStage').textContent = stages[i]; else clearInterval(iv); }, 300);
+        setTimeout(() => { overlay.classList.remove('active'); startTraining(); }, 1300);
+    } else { stopTraining(); }
+}
+
+function startTraining() {
+    isTraining = true;
+    document.getElementById('trainIcon').textContent = '⏸';
+    document.getElementById('trainText').textContent = 'Pause';
+    document.getElementById('trainBtn').classList.add('active');
+    trainInterval = setInterval(trainStep, 120);
+    toast('✦ Training Started', 'Gaussian optimization in progress');
+}
+
+function stopTraining() {
+    isTraining = false;
+    document.getElementById('trainIcon').textContent = '▶';
+    document.getElementById('trainText').textContent = 'Resume';
+    document.getElementById('trainBtn').classList.remove('active');
+    clearInterval(trainInterval);
+}
+
+function resetTraining() {
+    stopTraining();
+    iteration = 0; numSplats = 0; psnr = 0; loss = 1.0; camAngle = 0;
+    lossHistory = []; psnrHistory = [];
+    PIPELINE_STEPS[2].status = 'active';
+    PIPELINE_STEPS[3].status = 'pending';
+    PIPELINE_STEPS[4].status = 'pending';
+    PIPELINE_STEPS[5].status = 'pending';
+    document.getElementById('trainProgress').style.width = '0%';
+    ['mIter','hudIter'].forEach(id => document.getElementById(id).textContent = '0');
+    ['mPsnr','hudPsnr'].forEach(id => document.getElementById(id).textContent = '0.00');
+    ['mSplats','hudSplats'].forEach(id => document.getElementById(id).textContent = '0');
+    document.getElementById('mLoss').textContent = '0.000';
+    renderPipeline();
+    drawMainScene();
+    const lc = document.getElementById('lossCanvas').getContext('2d');
+    lc.clearRect(0, 0, lc.canvas.width, lc.canvas.height);
+    toast('↻ Reset', 'Training state cleared');
+}
+
+function densifySplats() {
+    numSplats = Math.floor(numSplats * 1.4);
+    toast('⊕ Densified', `Gaussians increased to ${(numSplats/1000).toFixed(0)}K`);
+    drawMainScene();
+}
+
+function pruneSplats() {
+    numSplats = Math.floor(numSplats * 0.7);
+    toast('⊖ Pruned', `Low-opacity Gaussians removed: ${(numSplats/1000).toFixed(0)}K remaining`);
+    drawMainScene();
+}
+
+function exportMesh() {
+    toast('⬡ Exporting', 'Generating mesh via marching cubes...');
+    setTimeout(() => toast('✓ Export Complete', 'mesh_shipyard.ply — 2.4M faces'), 2000);
+}
+
+function toast(title, msg) {
+    const t = document.getElementById('toast');
+    document.getElementById('toastTitle').textContent = title;
+    document.getElementById('toastMsg').textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+window.addEventListener('load', init);
+window.addEventListener('resize', initCanvases);
+</script>
+</body>
+</html>
